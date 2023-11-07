@@ -52,7 +52,7 @@ ASPURGE_RELEASE_PATH  	?= $(ASPURGE_ROOT_PATH)/build
 CFLAGS = -Wall -Wextra -std=c99
 
 ifeq ($(ASPURGE_BUILD_MODE),DEBUG)
-	CFLAGS += -ggdb
+	CFLAGS += -ggdb -D DEBUG=1
 else
 	CFLAGS += -O1
 endif
@@ -73,7 +73,7 @@ all: $(ASPURGE_LIB_PATH)/libraylib.a $(ASPURGE_RELEASE_PATH)/$(OUTNAME)$(EXT)
 $(ASPURGE_LIB_PATH)/libraylib.a: $(wildcard $(RAYLIB_ROOT_PATH)/src/*.h) $(wildcard $(RAYLIB_ROOT_PATH)/src/*.c)
 	$(MAKE) -C $(RAYLIB_ROOT_PATH)/src PLATFORM=PLATFORM_DESKTOP RAYLIB_RELEASE_PATH=../../lib RAYLIB_BUILD_MODE=$(RAYLIB_BUILD_MODE)
 
-$(ASPURGE_RELEASE_PATH)/$(OUTNAME)$(EXT): $(wildcard $(ASPURGE_INCLUDE_PATH)/*.h) $(wildcard $(ASPURGE_SRC_PATH)/*.c) $(ASPURGE_LIB_PATH)/libraylib.a
+$(ASPURGE_RELEASE_PATH)/$(OUTNAME)$(EXT): $(wildcard $(ASPURGE_INCLUDE_PATH)/*.h) $(wildcard $(ASPURGE_SRC_PATH)/*.c) $(ASPURGE_LIB_PATH)/libraylib.a Makefile
 	$(CC) $(wildcard *.c) -o $(ASPURGE_RELEASE_PATH)/$(OUTNAME) $(CFLAGS)
 
 # $(SLASH) is used to change / to \ when it is not interchangeable

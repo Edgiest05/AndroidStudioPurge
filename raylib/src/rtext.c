@@ -8,7 +8,7 @@
 *
 *       #define SUPPORT_DEFAULT_FONT
 *           Load default raylib font on initialization to be used by RL_DrawText() and MeasureText().
-*           If no default font loaded, DrawTextEx() and MeasureTextEx() are required.
+*           If no default font loaded, RL_DrawTextEx() and MeasureTextEx() are required.
 *
 *       #define SUPPORT_FILEFORMAT_FNT
 *       #define SUPPORT_FILEFORMAT_TTF
@@ -1092,13 +1092,13 @@ void RL_DrawText(const char *text, int posX, int posY, int fontSize, Color color
         if (fontSize < defaultFontSize) fontSize = defaultFontSize;
         int spacing = fontSize/defaultFontSize;
 
-        DrawTextEx(GetFontDefault(), text, position, (float)fontSize, (float)spacing, color);
+        RL_DrawTextEx(GetFontDefault(), text, position, (float)fontSize, (float)spacing, color);
     }
 }
 
 // Draw text using Font
 // NOTE: chars spacing is NOT proportional to fontSize
-void DrawTextEx(Font font, const char *text, Vector2 position, float fontSize, float spacing, Color tint)
+void RL_DrawTextEx(Font font, const char *text, Vector2 position, float fontSize, float spacing, Color tint)
 {
     if (font.texture.id == 0) font = GetFontDefault();  // Security check in case of not valid font
 
@@ -1146,7 +1146,7 @@ void DrawTextPro(Font font, const char *text, Vector2 position, Vector2 origin, 
         rlRotatef(rotation, 0.0f, 0.0f, 1.0f);
         rlTranslatef(-origin.x, -origin.y, 0.0f);
 
-        DrawTextEx(font, text, (Vector2){ 0.0f, 0.0f }, fontSize, spacing, tint);
+        RL_DrawTextEx(font, text, (Vector2){ 0.0f, 0.0f }, fontSize, spacing, tint);
 
     rlPopMatrix();
 }
