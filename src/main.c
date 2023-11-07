@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +23,9 @@
 
 #define SCROLLABLE_WIDTH (WIDTH * .60f)
 #define SCROLLABLE_HEIGHT (HEIGHT * .80f)
+#define SCROLLABLE_LINE_HEIGHT (SCROLLABLE_HEIGHT * .10f)
+#define CHECKBOX_DIMENSIONS 20.0f
+#define CHECKBOX_RESERVED_SPACE SCROLLABLE_LINE_HEIGHT
 
 #define RES_PATH "./res/"
 #define TEXTURE_PATH RES_PATH "img/"
@@ -39,6 +43,37 @@
     (Color) { 229, 0, 232, 255 }
 #define BG_COLOR \
     (Color) { 33, 33, 33, 255 }
+
+#define FONTS                        \
+    FONT_PATH "RobotoSlab-Bold.ttf", \
+        FONT_PATH "RobotoSlab-Regular.ttf"
+
+typedef enum {
+    ROBOTO_SLAB_BOLD,
+    ROBOTO_SLAB_REGULAR,
+    FONTS_LENGTH
+} FontIndex;
+
+#define TEXTURES                      \
+    TEXTURE_PATH "icon.png",          \
+        TEXTURE_PATH "logo.png",      \
+        TEXTURE_PATH "cancel.png",    \
+        TEXTURE_PATH "box-empty.png", \
+        TEXTURE_PATH "box-filled.png"
+
+typedef enum {
+    ICON,
+    LOGO,
+    CANCEL,
+    BOX_EMPTY,
+    BOX_FILLED,
+    TEXTURES_LENGTH
+} TextureIndex;
+
+static Font fonts[FONTS_LENGTH] = {0};
+static Texture textures[TEXTURES_LENGTH] = {0};
+static Vector2 scrollableAnchor;
+static float scrollOffset = 0.0f;
 
 // * Checkbox
 typedef struct Checkbox {
@@ -78,6 +113,34 @@ bool isCheckboxEnabled(Checkbox *box) {
 
 #include <process.h>
 #include <windows.h>
+
+#define STUDIO_FILES_PATH                       \
+    "%USERPROFILE%/.android",                   \
+        "%USERPROFILE%/.gradle",                \
+        "%USERPROFILE%/.m2",                    \
+        "%USERPROFILE%/.AndroidStudio*",        \
+        "%APPDATA%/JetBrains",                  \
+        "%APPDATA%/Google/AndroidStudio*",      \
+        "%LOCALAPPDATA%/Google/AndroidStudio*", \
+        "C:/Program Files/Android"
+
+typedef enum {
+    DOT_ANDROID,
+    DOT_GRADLE,
+    DOT_M2,
+    DOT_ANDROID_STUDIO_STAR,
+    JETBRAINS,
+    ANDROID_STUDIO_STAR_APPDATA,
+    ANDROID_STUDIO_STAR_LOCAL,
+    ANDROID,
+    TOTAL_STUDIO_FILE_PATHS
+} StudioFilesPathIndex;
+
+bool checkboxes[TOTAL_STUDIO_FILE_PATHS];
+
+#define SDK_PATH "%LOCALAPPDATA%/Android"
+
+#define USER_PROJECTS_PATH "%USERPROFILE%/AndroidStudioProjects"
 
 void quietRemoveDir(LPCTSTR dir)  // Fully qualified name of the directory being deleted, without trailing backslash
 {
@@ -216,29 +279,6 @@ Vector2 getRectAnchor(float maxWidth, float maxHeight, float width, float height
     return (Vector2){offset.x + parentAnchor.x, offset.y + parentAnchor.y};
 }
 
-#define FONTS                        \
-    FONT_PATH "RobotoSlab-Bold.ttf", \
-        FONT_PATH "RobotoSlab-ExtraLight.ttf"
-
-typedef enum {
-    ROBOTO_SLAB_BOLD,
-    ROBOTO_SLAB_EXTRALIGHT,
-    FONTS_LENGTH
-} FontIndex;
-
-#define TEXTURES             \
-    TEXTURE_PATH "logo.png", \
-        TEXTURE_PATH "cancel.png"
-
-typedef enum {
-    LOGO,
-    CANCEL,
-    TEXTURES_LENGTH
-} TextureIndex;
-
-static Font fonts[FONTS_LENGTH] = {0};
-static Texture textures[TEXTURES_LENGTH] = {0};
-
 void LoadResources() {
     const char *fontsPath[] = {FONTS};
     for (size_t i = 0; i < FONTS_LENGTH; i++) {
@@ -249,6 +289,10 @@ void LoadResources() {
     for (size_t i = 0; i < TEXTURES_LENGTH; i++) {
         textures[i] = LoadTexture(texturesPath[i]);
     }
+
+    Vector2 anchor = getRectAnchor(WIDTH, HEIGHT, SCROLLABLE_WIDTH, SCROLLABLE_HEIGHT, (Vector2){0, 0});
+    anchor.x = WIDTH - SCROLLABLE_WIDTH - anchor.x / 4;
+    scrollableAnchor = anchor;
 }
 
 void UnloadResources() {
@@ -256,7 +300,6 @@ void UnloadResources() {
         UnloadFont(fonts[i]);
     }
 
-    const char *texturesPath[] = {TEXTURES};
     for (size_t i = 0; i < TEXTURES_LENGTH; i++) {
         UnloadTexture(textures[i]);
     }
@@ -289,12 +332,12 @@ void WriteAppTitle() {
     }
 }
 
-void DrawAppLogo(const char *path) {
+void DrawAppLogo() {
     Vector2 anchor = getRectAnchor(HEIGHT, HEIGHT, LOGO_WIDTH, LOGO_HEIGHT, (Vector2){0, 0});
     anchor.x = 75.0f;
     anchor.y *= 1.35f;
 
-    Vector2 logoCenter = {anchor.x + LOGO_WIDTH / 2, anchor.y + LOGO_HEIGHT / 2};
+    // Vector2 logoCenter = {anchor.x + LOGO_WIDTH / 2, anchor.y + LOGO_HEIGHT / 2};
 
     // ? Draw Android Studio logo texture
     DrawTexturePro(
@@ -303,7 +346,7 @@ void DrawAppLogo(const char *path) {
         (RL_Rectangle){V2Unpack(anchor), LOGO_WIDTH, LOGO_HEIGHT},
         (Vector2){0, 0},
         0.0f,
-        (Color){255, 255, 255, 255});
+        WHITE);
 
     NPatchInfo patch = {(RL_Rectangle){0, 0, 379, 379}, 0, 0, 0, 0, NPATCH_NINE_PATCH};
     RL_Rectangle dest = (RL_Rectangle){
@@ -331,26 +374,96 @@ void DrawAppLogo(const char *path) {
 }
 
 void DrawScrollableOpts() {
-    // Draw contents
-    Vector2 anchor = getRectAnchor(WIDTH, HEIGHT, SCROLLABLE_WIDTH, SCROLLABLE_HEIGHT, (Vector2){0, 0});
-    anchor.x = WIDTH - SCROLLABLE_WIDTH - anchor.x / 4;
+    const float lines = floorf(SCROLLABLE_HEIGHT / SCROLLABLE_LINE_HEIGHT);
+    const int fontSize = 20;
+    const int spacing = 2;
+    const char *textArr[TOTAL_STUDIO_FILE_PATHS] = {
+        STUDIO_FILES_PATH};
+
+    for (size_t i = 0; i < min(lines, TOTAL_STUDIO_FILE_PATHS); i++) {
+        Vector2 rowAnchor = {scrollableAnchor.x + CHECKBOX_RESERVED_SPACE, scrollableAnchor.y + SCROLLABLE_LINE_HEIGHT * i - scrollOffset};
+        const float textHeight = MeasureTextEx(fonts[0], textArr[i], fontSize, spacing).y;
+
+        Vector2 textAnchor = rowAnchor;
+        textAnchor.y += (SCROLLABLE_LINE_HEIGHT - textHeight) / 2;
+
+        Vector2 boxAnchor = getRectAnchor(CHECKBOX_RESERVED_SPACE, CHECKBOX_RESERVED_SPACE, CHECKBOX_DIMENSIONS, CHECKBOX_DIMENSIONS, (Vector2){0, 0});
+        boxAnchor.x += scrollableAnchor.x;
+        boxAnchor.y += rowAnchor.y;
+
+        RL_Rectangle boxDestRect = (RL_Rectangle){V2Unpack(boxAnchor), CHECKBOX_DIMENSIONS, CHECKBOX_DIMENSIONS};
+
+        DrawTextureNPatch(textures[(checkboxes[i] ? BOX_FILLED : BOX_EMPTY)],
+                          (NPatchInfo){0, 0, 152, 152, NPATCH_NINE_PATCH},
+                          boxDestRect,
+                          (Vector2){0, 0},
+                          0.0f,
+                          WHITE);
+
+        RL_DrawTextEx(
+            fonts[ROBOTO_SLAB_REGULAR],
+            textArr[i],
+            textAnchor,
+            fontSize, spacing, RAYWHITE);
+    }
+
+    // Draw top and bottom wrapping rectangles
+    DrawRectangle(scrollableAnchor.x, 0, SCROLLABLE_WIDTH, scrollableAnchor.y, BG_COLOR);
+    DrawRectangle(scrollableAnchor.x, scrollableAnchor.y + SCROLLABLE_HEIGHT, SCROLLABLE_WIDTH, scrollableAnchor.y, BG_COLOR);
 
 #if DEBUG
     // ? Draw Gizmos
+    for (size_t i = 0; i < min(lines, TOTAL_STUDIO_FILE_PATHS); i++) {
+        // Checkboxes
+        Vector2 rowAnchor = {scrollableAnchor.x + CHECKBOX_RESERVED_SPACE, scrollableAnchor.y + SCROLLABLE_LINE_HEIGHT * i - scrollOffset};
+
+        Vector2 boxAnchor = getRectAnchor(CHECKBOX_RESERVED_SPACE, CHECKBOX_RESERVED_SPACE, CHECKBOX_DIMENSIONS, CHECKBOX_DIMENSIONS, (Vector2){0, 0});
+        boxAnchor.x += scrollableAnchor.x;
+        boxAnchor.y += rowAnchor.y;
+
+        RL_Rectangle boxDestRect = (RL_Rectangle){V2Unpack(boxAnchor), CHECKBOX_DIMENSIONS, CHECKBOX_DIMENSIONS};
+
+        DrawRectangleLines(RectUnpack(boxDestRect), DEBUG_COLOR);
+
+        // Text line bounding box
+        DrawRectangleLines(
+            V2Unpack(rowAnchor),
+            SCROLLABLE_WIDTH - CHECKBOX_RESERVED_SPACE,
+            SCROLLABLE_LINE_HEIGHT,
+            DEBUG_COLOR);
+    }
+
     DrawRectangleLines(
-        V2Unpack(anchor),
+        V2Unpack(scrollableAnchor),
         SCROLLABLE_WIDTH,
         SCROLLABLE_HEIGHT,
         DEBUG_COLOR);
 #endif
+}
 
-    // Draw top and bottom padding rectangles
+#define ScrollableRectContained(x, y) CheckContained((Vector2){x, y}, (RL_Rectangle){scrollableAnchor.x, scrollableAnchor.y, SCROLLABLE_WIDTH, SCROLLABLE_HEIGHT})
+
+bool CheckContained(Vector2 point, RL_Rectangle space) {
+    return (point.x >= space.x && point.x <= space.x + space.width) &&
+           (point.y >= space.y && point.y <= space.y + space.height);
+}
+
+int getClickedRow(float x, float y) {
+    assert(ScrollableRectContained(x, y) && "Invalid call of getClickedRow");
+    return (int)floor((y - scrollableAnchor.y) / SCROLLABLE_LINE_HEIGHT);
 }
 
 void HandleClick(float x, float y) {
+    if (ScrollableRectContained(x, y)) {
+        checkboxes[getClickedRow(x, y)] ^= 1;
+    }
 }
 
 void HandleScroll(float x, float y, float scroll) {
+    if (ScrollableRectContained(x, y)) {
+        scrollOffset += (scroll)*SCROLLABLE_LINE_HEIGHT;
+        if (scrollOffset < 0) scrollOffset = 0;
+    }
 }
 
 int main(void) {
@@ -358,11 +471,15 @@ int main(void) {
     SetTargetFPS(TARGET_FPS);
     LoadResources();
 
+    Image icon = LoadImageFromTexture(textures[ICON]);
+    SetWindowIcon(icon);
+    UnloadImage(icon);
+
     while (!WindowShouldClose()) {
         BeginDrawing();
         ClearBackground(BG_COLOR);
         WriteAppTitle();
-        DrawAppLogo(TEXTURE_PATH "logo.png");
+        DrawAppLogo();
         DrawScrollableOpts();
 
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
@@ -370,7 +487,7 @@ int main(void) {
         }
 
         float scroll = GetMouseWheelMoveV().y;
-        if (scroll > 0) {
+        if (scroll != 0) {
             HandleScroll(V2Unpack(GetMousePosition()), scroll);
         }
 
