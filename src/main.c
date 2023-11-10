@@ -36,6 +36,20 @@
 #define FONT_PATH RES_PATH "fonts/"
 
 #define ASP_FREE(ptr) free((void *)ptr)
+#define ASP_ERROR(text, ...)                \
+    do {                                    \
+        fprintf(stderr, text, __VA_ARGS__); \
+        exit(EXIT_FAILURE);                 \
+    } while (0)
+#define ASP_CSTR_JOIN(a, b, buffer)                       \
+    do {                                                  \
+        size_t len_a = strlen(a);                         \
+        size_t len_b = strlen(b);                         \
+        memcpy((void *)buffer, (void *)a, len_a);         \
+        memcpy((void *)&buffer[len_a], (void *)b, len_b); \
+        buffer[len_a + len_b] = '\0';                     \
+    } while (0)
+
 #define TODO() assert(0 && "Not yet implemented")
 #define Len(arr) sizeof(arr) / sizeof(arr[0])
 #define RectUnpack(rect) rect.x, rect.y, rect.width, rect.height
@@ -46,6 +60,82 @@
 #define HEADLINE "HEAD#"
 #define TEXTLINE "TEXT#"
 #define TAG_LEN 5
+
+typedef struct Cstr_Arr {
+    char **data;
+    size_t allocated;
+    size_t capacity;
+} Cstr_Arr;
+
+// Reallocates entire structure and doubles the capacity
+#define Cstr_Arr_Reallocate(arrPtr, mult)                               \
+    do {                                                                \
+        (&stringBuilder)->capacity *= mult;                             \
+        Cstr_Arr new;                                                   \
+        new.data = malloc((&stringBuilder)->capacity * sizeof(char *)); \
+        for (size_t i = 0; i < (&stringBuilder)->allocated; i++) {      \
+            new.data[i] = (&stringBuilder)->data[i];                    \
+        }                                                               \
+        free((void *)(&stringBuilder)->data);                           \
+        new.capacity = (&stringBuilder)->capacity;                      \
+        new.allocated = (&stringBuilder)->allocated;                    \
+        *(&stringBuilder) = new;                                        \
+    } while (0)
+
+#define Cstr_Arr_AddElem(arrPtr, elem, mult)             \
+    do {                                                 \
+        if ((arrPtr)->allocated == (arrPtr)->capacity) { \
+            Cstr_Arr_Reallocate(arrPtr, mult);           \
+        }                                                \
+        (arrPtr)->data[(arrPtr)->allocated] = elem;      \
+        (arrPtr)->allocated++;                           \
+    } while (0)
+
+#define Cstr_Arr_FillFromSplit(arrPtr, str, split, mult)              \
+    do {                                                              \
+        if ((arrPtr)->data == NULL) {                                 \
+            (arrPtr)->data = malloc(1 * sizeof(char *));              \
+            (arrPtr)->capacity = 1;                                   \
+        }                                                             \
+        size_t prev = 0;                                              \
+        for (size_t i = 0; i < strlen(str); i++) {                    \
+            char *cur = malloc((i - prev) * sizeof(char) + 1);        \
+            memcpy((void *)cur, (void *)&str[prev], i - prev);        \
+            cur[i - prev] = '\0';                                     \
+            if (str[i] == '/' && i - prev > 0) {                      \
+                Cstr_Arr_AddElem(arrPtr, cur, mult);                  \
+                prev = i + 1;                                         \
+                i++;                                                  \
+                assert(str[i + 1] != '/' && "Invalid string format"); \
+            }                                                         \
+        }                                                             \
+        if (prev == strlen(str)) break;                               \
+        Cstr_Arr_AddElem(arrPtr, &str[prev], mult);                   \
+    } while (0)
+
+#define Cstr_Arr_ForEach(arrPtr, callback)                 \
+    do {                                                   \
+        for (size_t i = 0; i < (arrPtr)->allocated; i++) { \
+            callback(arrPtr, i);                           \
+        }                                                  \
+    } while (0)
+
+#define Cstr_Arr_Join(arrPtr, sep, out)                       \
+    do {                                                      \
+        char buffer[2048];                                    \
+        size_t prev = 0;                                      \
+        for (size_t i = 0; i < (arrPtr)->allocated; i++) {    \
+            size_t curLen = strlen((arrPtr)->data[i]);        \
+            if (curLen == 0) continue;                        \
+            memcpy(&buffer[prev], (arrPtr)->data[i], curLen); \
+            prev += curLen;                                   \
+            memcpy(&buffer[prev], sep, strlen(sep));          \
+            prev += strlen(sep);                              \
+        }                                                     \
+        buffer[prev - 1] = '\0';                              \
+        memcpy(out, buffer, strlen(buffer));                  \
+        out[strlen(buffer)] = '\0';                           \
+    } while (0)
 
 // Colors
 #define DEBUG_COLOR \
@@ -123,6 +213,9 @@ bool isCheckboxEnabled(Checkbox *box) {
 #include <process.h>
 #include <windows.h>
 
+#define DATA_DIR_PATH "%APPDATA%/AndroidStudioPurge/"
+#define DATA_FILE_PATH DATA_DIR_PATH "data"
+
 #define STUDIO_FILES_PATH                                \
     HEADLINE "Remove studio files:",                     \
         TEXTLINE "%USERPROFILE%/.android",               \
@@ -175,18 +268,109 @@ typedef enum {
     TOTAL_ENTRIES
 } RemovePathsIndex;
 
-bool checkboxes[TOTAL_ENTRIES];
+bool checkboxes[TOTAL_ENTRIES] = {
+    0, // STUDIO_PATHS_HEADLINE
+    1, // DOT_ANDROID
+    1, // DOT_GRADLE
+    1, // DOT_M2
+    1, // DOT_ANDROID_STUDIO_STAR
+    1, // JETBRAINS
+    1, // ANDROID_STUDIO_STAR_APPDATA
+    1, // ANDROID_STUDIO_STAR_LOCAL
+    1, // ANDROID
+    0, // SDK_PATH_HEADLINE
+    0, // SDK_ANDROID_LOCAL
+    0, // USER_PATH_HEADLINE
+    0, // USER_STUDIO_PROJECTS
+};
 
-void quietRemoveDir(LPCTSTR dir)  // Fully qualified name of the directory being deleted, without trailing backslash
-{
+#define TranslateEnvVariableFree(arrPtr, idx)                        \
+    do {                                                             \
+        const char *variable = (arrPtr)->data[idx];                  \
+        if (strlen(variable) < 2) continue;                          \
+        const int MAX_SIZE = 256;                                    \
+        char name[MAX_SIZE] = {};                                    \
+        memcpy(name, &variable[1], strlen(variable) - 2);            \
+        char *buffer = malloc(MAX_SIZE * sizeof(char));              \
+        DWORD code = GetEnvironmentVariable(name, buffer, MAX_SIZE); \
+        if (GetLastError() == ERROR_ENVVAR_NOT_FOUND) continue;      \
+        if (code == MAX_SIZE) continue;                              \
+        ASP_FREE((arrPtr)->data[idx]);                               \
+        (arrPtr)->data[idx] = malloc(strlen(buffer) * sizeof(char)); \
+        memcpy((arrPtr)->data[idx], buffer, strlen(buffer) + 1);     \
+        ASP_FREE(buffer);                                            \
+    } while (0)
+
+char *ParsePath(const char *path) {
+    Cstr_Arr stringBuilder = {};
+    Cstr_Arr_FillFromSplit(&stringBuilder, path, '/', 2);
+
+    Cstr_Arr_ForEach(&stringBuilder, TranslateEnvVariableFree);
+
+    char *out = malloc(2048 * sizeof(char));
+    Cstr_Arr_Join(&stringBuilder, "\\", out);
+    return out;
+}
+
+void CreateDataDir(const char *path) {
+    const char *parsedPath = ParsePath(path);  // Needs to be freed
+    if (!CreateDirectory(parsedPath, NULL)) {
+        DWORD error = GetLastError();
+        switch (error) {
+            case ERROR_ALREADY_EXISTS:
+                break;
+            case ERROR_PATH_NOT_FOUND:
+                ASP_ERROR("Path %s not found", path);
+                break;
+        }
+    }
+    ASP_FREE(parsedPath);
+}
+
+void CreateDataFile(const char *file) {
+    const char *parsedFile = ParsePath(file);
+    if (FileExists(parsedFile)) return;
+
+    HANDLE hnd = CreateFile(parsedFile,
+                            GENERIC_WRITE,
+                            0,
+                            0,
+                            CREATE_NEW,
+                            FILE_ATTRIBUTE_NORMAL,
+                            0);
+    if (hnd == INVALID_HANDLE_VALUE) ASP_ERROR("Invalid handle created for data file", NULL);
+
+    char *buffer = malloc(TOTAL_REMOVE_PATHS * sizeof(char));
+    buffer[0] = '\0';
+    for (size_t i = 0; i < TOTAL_REMOVE_PATHS; i++) {
+        // ASP_CSTR_JOIN(buffer, (checkboxes[i] ? "1" : "0"), buffer);
+        do {
+            size_t len_a = strlen(buffer);
+            size_t len_b = strlen((checkboxes[i] ? "1" : "0"));
+            memcpy((void *)buffer, (void *)buffer, len_a);
+            memcpy((void *)&buffer[len_a], (void *)(checkboxes[i] ? "1" : "0"), len_b);
+            buffer[len_a + len_b] = '\0';
+        } while (0);
+    }
+
+    DWORD writtenBytes;
+
+    WriteFile(hnd,
+              buffer,
+              strlen(buffer),
+              &writtenBytes,
+              NULL);
+
+    ASP_FREE(buffer);
+}
+
+void RemoveDirQuiet(LPCTSTR dir) {
     SHFILEOPSTRUCT file_op = {
         NULL,
         FO_DELETE,
         dir,
         "",
-        FOF_CONFIRMMOUSE |
-            FOF_NOERRORUI |
-            FOF_SILENT,
+        FOF_CONFIRMMOUSE,
         false,
         0,
         ""};
@@ -529,6 +713,13 @@ void HandleScroll(float x, float y, float scroll) {
 int main(void) {
     InitWindow(WIDTH, HEIGHT, "Android Studio Purge");
     SetTargetFPS(TARGET_FPS);
+
+    // * Create directory enviroment
+    CreateDataDir(DATA_DIR_PATH);
+    CreateDataFile(DATA_FILE_PATH);
+
+    // TODO: LoadDataFile();
+
     LoadResources();
 
     Image icon = LoadImageFromTexture(textures[ICON]);
