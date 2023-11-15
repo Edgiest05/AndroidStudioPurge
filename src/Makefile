@@ -49,7 +49,7 @@ RAYLIB_ROOT_PATH		?= $(ASPURGE_ROOT_PATH)/raylib
 ASPURGE_RELEASE_PATH  	?= $(ASPURGE_ROOT_PATH)/build
 
 # Define CFLAGS for debug/release of ASPurge
-CFLAGS = -Wall -Wextra -std=c99
+CFLAGS = -Wall -Wextra -std=c99 -Wno-format-extra-args
 
 ifeq ($(ASPURGE_BUILD_MODE),DEBUG)
 	CFLAGS += -ggdb -D DEBUG=1
