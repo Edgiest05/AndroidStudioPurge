@@ -1,0 +1,5 @@
+# Tracking only used fonts
+*
+!.gitignore
+!RobotoSlab-Bold.ttf
+!RobotoSlab-Regular.ttf
