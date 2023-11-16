@@ -17,8 +17,8 @@
 
 #define TARGET_FPS 60
 #define MAX_FONT_SIZE 48
-#define MAX_PATH_LENGTH 2048
 #define MAX_NAME_LENGTH 256
+#define MAX_BUFFER_SIZE 2048
 
 #define WIDTH 900
 #define HEIGHT 550
@@ -63,18 +63,18 @@
     __TIME__           \
     " - [%s] "__FILE__ \
     ":" TO_STRING(__LINE__) ": "
-#define ASP_ERROR(text, ...)                                      \
-    do {                                                          \
-        char buffer[MAX_PATH_LENGTH] = {};                        \
-        snprintf(buffer, MAX_PATH_LENGTH, LOG_TEMPLATE, "ERROR"); \
-                                                                  \
-        char format[MAX_PATH_LENGTH] = {};                        \
-        snprintf(format, MAX_PATH_LENGTH, text, __VA_ARGS__);     \
-                                                                  \
-        char out[MAX_PATH_LENGTH] = {};                           \
-        ASP_CSTR_JOIN(buffer, format, out);                       \
-        fprintf(stderr, out, __VA_ARGS__);                        \
-        exit(EXIT_FAILURE);                                       \
+#define ASP_ERROR(text, ...)                               \
+    do {                                                   \
+        char buffer[MAX_BUFFER_SIZE] = {0};                \
+        snprintf(buffer, MAX_PATH, LOG_TEMPLATE, "ERROR"); \
+                                                           \
+        char format[MAX_BUFFER_SIZE] = {0};                \
+        snprintf(format, MAX_PATH, text, __VA_ARGS__);     \
+                                                           \
+        char out[MAX_BUFFER_SIZE] = {0};                   \
+        ASP_CSTR_JOIN(buffer, format, out);                \
+        fprintf(stderr, out, __VA_ARGS__);                 \
+        exit(EXIT_FAILURE);                                \
     } while (0)
 
 #define TODO() assert(0 && "Not yet implemented")
@@ -149,7 +149,7 @@ typedef struct Cstr_Arr {
 
 #define Cstr_Arr_Join(arrPtr, sep, out)                       \
     do {                                                      \
-        char buffer[MAX_PATH_LENGTH] = {};                    \
+        char buffer[MAX_PATH] = {0};                          \
         size_t prev = 0;                                      \
         for (size_t i = 0; i < (arrPtr)->allocated; i++) {    \
             size_t curLen = strlen((arrPtr)->data[i]);        \
@@ -304,7 +304,7 @@ void TranslateEnvVariable(Cstr_Arr *arrPtr, size_t idx) {
     const char *variable = (arrPtr)->data[(idx)];
     if (strlen(variable) < 2 || *variable != '%' || variable[strlen(variable) - 1] != '%') return;
 
-    char name[MAX_NAME_LENGTH] = {};
+    char name[MAX_NAME_LENGTH] = {0};
     memcpy(name, &variable[1], strlen(variable) - 2);
 
     char const *envVar = name;
@@ -332,20 +332,20 @@ defer:
 }
 
 void ParsePath(const char *path, void *dest) {
-    Cstr_Arr stringBuilder = {};
+    Cstr_Arr stringBuilder = {0};
     Cstr_Arr_FillFromSplit(&stringBuilder, path, '/', 2);
 
     // TODO: the second time this thing won't work
     Cstr_Arr_ForEach(&stringBuilder, TranslateEnvVariable);
 
-    char out[MAX_PATH_LENGTH] = {};
+    char out[MAX_PATH] = {0};
     Cstr_Arr_Join(&stringBuilder, "\\", out);
 
     memcpy(dest, (void *)out, strlen(out) + 1);
 }
 
 void CreateDataDir(const char *path) {
-    char dest[MAX_PATH_LENGTH] = {};
+    char dest[MAX_PATH] = {0};
     ParsePath(path, dest);
     const char *parsedPath = dest;
     if (!CreateDirectory(parsedPath, NULL)) {
@@ -365,7 +365,7 @@ void CreateDataDir(const char *path) {
 }
 
 void CreateDataFile(const char *file) {
-    char dest[MAX_PATH_LENGTH] = {};
+    char dest[MAX_PATH] = {0};
     ParsePath(file, dest);
     const char *parsedFile = dest;
     if (FileExists(parsedFile)) return;
@@ -379,7 +379,7 @@ void CreateDataFile(const char *file) {
                             0);
     if (hnd == INVALID_HANDLE_VALUE) ASP_ERROR("Invalid handle created for data file at: %s", parsedFile);
 
-    char buffer[TOTAL_ENTRIES + 1] = {};
+    char buffer[TOTAL_ENTRIES + 1] = {0};
     for (size_t i = 0; i < TOTAL_ENTRIES; i++) {
         buffer[i] = (checkboxes[i] ? '1' : '0');
     }
@@ -524,7 +524,7 @@ Vector2 getRectAnchor(float maxWidth, float maxHeight, float width, float height
 long long WriteToDataFile(const char *file, const char *text) {
     long long result = 0;
 
-    char dest[MAX_PATH_LENGTH] = {};
+    char dest[MAX_PATH] = {0};
     ParsePath(file, dest);
     char *parsedFile = dest;
 
@@ -548,7 +548,7 @@ defer:
 void LoadDataFile(const char *file) {
     int result = 0;
 
-    char dest[MAX_PATH_LENGTH] = {};
+    char dest[MAX_PATH] = {0};
     ParsePath(file, dest);
     char *parsedFile = dest;
 
@@ -556,7 +556,7 @@ void LoadDataFile(const char *file) {
 
     if (handle == NULL) RETURN_DEFER(1);
 
-    char buffer[MAX_NAME_LENGTH] = {};
+    char buffer[MAX_NAME_LENGTH] = {0};
     fscanf(handle, "%s", buffer);
 
     for (size_t i = 0; i < TOTAL_ENTRIES; i++) {
@@ -608,7 +608,8 @@ void WriteAppTitle() {
     const size_t totalLines = sizeof(lines) / sizeof(lines[0]);
 
     float longest = 0;
-    float offsets[totalLines] = {};
+    float offsets[totalLines];
+    memset(offsets, 0, totalLines);
     for (size_t i = 0; i < totalLines; i++) {
         float textPixelLength = MeasureTextEx(fonts[ROBOTO_SLAB_BOLD], lines[i], MAX_FONT_SIZE, spacing).x;
         longest = max(longest, textPixelLength);
@@ -671,8 +672,8 @@ void DrawScrollableOpts() {
     for (size_t i = 0; i < TOTAL_ENTRIES; i++) {
         size_t len = strlen(textArr[i]) - TAG_LEN;
 
-        char curTag[TAG_LEN + 1] = {};
-        char curText[len + 1] = {};
+        char curTag[TAG_LEN + 1] = {0};
+        char curText[MAX_PATH] = {0};
 
         memcpy(curTag, textArr[i], TAG_LEN);
         memcpy(curText, &(textArr[i])[TAG_LEN], len);
@@ -816,7 +817,7 @@ int main(void) {
     UnloadResources();
     RL_CloseWindow();
 
-    char buffer[MAX_NAME_LENGTH] = {};
+    char buffer[MAX_NAME_LENGTH] = {0};
     for (size_t i = 0; i < TOTAL_ENTRIES; i++) {
         buffer[i] = (checkboxes[i] ? '1' : '0');
     }

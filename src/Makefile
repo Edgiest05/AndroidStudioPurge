@@ -11,22 +11,24 @@ OUTNAME					:= ASPurge
 CC = gcc
 
 # Windows defaults
-PIPE_REMOVE_OUTPUT = 2>nul
+PIPE_REMOVE_OUTPUT = >nul
 EXT = .exe
 tmp = /
 
 ifeq ($(OS),Windows_NT) 
+	MV = move /Y
 	RM = del /Q
 	RM_ALL = rd /S /Q
 	CP = copy /Y
 	SLASH = $(subst /,\,$(tmp))
 else
+	MV = mv -f
 	RM = rm -f
 	RM_ALL = rm -rf
 	CP = cp -f
 	SLASH = $(tmp)
 	EXT =
-	PIPE_REMOVE_OUTPUT =
+	PIPE_REMOVE_OUTPUT = > /dev/null
 endif
 
 # Source code path
@@ -49,7 +51,7 @@ RAYLIB_ROOT_PATH		?= $(ASPURGE_ROOT_PATH)/raylib
 ASPURGE_RELEASE_PATH  	?= $(ASPURGE_ROOT_PATH)/build
 
 # Define CFLAGS for debug/release of ASPurge
-CFLAGS = -Wall -Wextra -std=c99 -Wno-format-extra-args
+CFLAGS = -Wall -Wextra -pedantic -std=c99 -Wno-format-extra-args -Wno-format-truncation
 
 ifeq ($(ASPURGE_BUILD_MODE),DEBUG)
 	CFLAGS += -ggdb -D DEBUG=1
@@ -78,7 +80,9 @@ $(ASPURGE_RELEASE_PATH)/$(OUTNAME)$(EXT): $(wildcard $(ASPURGE_INCLUDE_PATH)/*.h
 
 # $(SLASH) is used to change / to \ when it is not interchangeable
 clean:
+	-$(MV) $(subst /,$(SLASH),$(ASPURGE_RELEASE_PATH)/.gitignore $(ASPURGE_RELEASE_PATH)/../.gitignore-build $(PIPE_REMOVE_OUTPUT))
 	-$(RM) $(subst /,$(SLASH),$(RAYLIB_ROOT_PATH)/src/*.o $(PIPE_REMOVE_OUTPUT))
 	-$(RM) $(subst /,$(SLASH),$(ASPURGE_LIB_PATH)/libraylib.a $(PIPE_REMOVE_OUTPUT))
 	-$(RM_ALL) $(subst /,$(SLASH),$(ASPURGE_RELEASE_PATH) $(PIPE_REMOVE_OUTPUT))
 	-mkdir $(subst /,$(SLASH),$(ASPURGE_RELEASE_PATH) $(PIPE_REMOVE_OUTPUT))
+	-$(MV) $(subst /,$(SLASH),$(ASPURGE_RELEASE_PATH)/../.gitignore-build $(ASPURGE_RELEASE_PATH)/.gitignore $(PIPE_REMOVE_OUTPUT))
