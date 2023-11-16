@@ -71,7 +71,7 @@
         char format[MAX_PATH_LENGTH] = {};                        \
         snprintf(format, MAX_PATH_LENGTH, text, __VA_ARGS__);     \
                                                                   \
-        char out[strlen(buffer) + strlen(format) + 1] = {};       \
+        char out[MAX_PATH_LENGTH] = {};                           \
         ASP_CSTR_JOIN(buffer, format, out);                       \
         fprintf(stderr, out, __VA_ARGS__);                        \
         exit(EXIT_FAILURE);                                       \
@@ -201,22 +201,7 @@ static Texture textures[TEXTURES_LENGTH] = {0};
 static Vector2 scrollableAnchor;
 static float scrollOffset = 0.0f;
 
-// * Checkbox
-typedef struct Checkbox {
-    float width;
-    float height;
-    bool enabled;
-} Checkbox;
-
-void toggleCheckbox(Checkbox *box) {
-    box->enabled = !box->enabled;
-}
-
-bool isCheckboxEnabled(Checkbox *box) {
-    return box->enabled;
-}
-
-// * Button
+long long WriteToDataFile(const char *, const char *);
 
 #ifdef _WIN32
 
@@ -241,7 +226,7 @@ bool isCheckboxEnabled(Checkbox *box) {
 #include <windows.h>
 
 #define DATA_DIR_PATH "%APPDATA%/AndroidStudioPurge/"
-#define DATA_FILE_PATH DATA_DIR_PATH "data"
+#define DATA_FILE_PATH DATA_DIR_PATH ".boxes"
 
 #define STUDIO_FILES_PATH                                \
     HEADLINE "Remove studio files:",                     \
@@ -390,24 +375,16 @@ void CreateDataFile(const char *file) {
                             0,
                             0,
                             CREATE_NEW,
-                            FILE_ATTRIBUTE_HIDDEN,
+                            FILE_ATTRIBUTE_NORMAL,
                             0);
     if (hnd == INVALID_HANDLE_VALUE) ASP_ERROR("Invalid handle created for data file at: %s", parsedFile);
 
-    char buffer[TOTAL_ENTRIES+1] = {};
+    char buffer[TOTAL_ENTRIES + 1] = {};
     for (size_t i = 0; i < TOTAL_ENTRIES; i++) {
         buffer[i] = (checkboxes[i] ? '1' : '0');
     }
 
-    DWORD writtenBytes;
-
-    WriteFile(hnd,
-              buffer,
-              strlen(buffer),
-              &writtenBytes,
-              NULL);
-
-    CloseHandle(hnd);
+    WriteToDataFile(file, buffer);
 }
 
 void RemoveDirQuiet(LPCTSTR dir) {
@@ -544,12 +521,36 @@ Vector2 getRectAnchor(float maxWidth, float maxHeight, float width, float height
     return (Vector2){offset.x + parentAnchor.x, offset.y + parentAnchor.y};
 }
 
+long long WriteToDataFile(const char *file, const char *text) {
+    long long result = 0;
+
+    char dest[MAX_PATH_LENGTH] = {};
+    ParsePath(file, dest);
+    char *parsedFile = dest;
+
+    FILE *handle;
+    fopen_s(&handle, parsedFile, "w");
+
+    if (handle == NULL) RETURN_DEFER(-1);
+
+    fprintf(handle, "%s", text);
+
+    result = (long long)strlen(text);
+
+defer:
+    fclose(handle);
+    if (result < 0) {
+        ASP_ERROR("Encountered an error with path %s: %s", parsedFile, strerror(errno));
+    }
+    return result;
+}
+
 void LoadDataFile(const char *file) {
     int result = 0;
 
     char dest[MAX_PATH_LENGTH] = {};
     ParsePath(file, dest);
-    const char *parsedFile = dest;
+    char *parsedFile = dest;
 
     FILE *handle = fopen(parsedFile, "r");
 
@@ -664,14 +665,14 @@ void DrawAppLogo() {
 void DrawScrollableOpts() {
     // const float lines = floorf(SCROLLABLE_HEIGHT / SCROLLABLE_LINE_HEIGHT);
     const int spacing = 2;
-    static const char * const textArr[] = {
+    static const char *const textArr[] = {
         REMOVE_PATHS};
 
     for (size_t i = 0; i < TOTAL_ENTRIES; i++) {
         size_t len = strlen(textArr[i]) - TAG_LEN;
 
-        char curTag[TAG_LEN+1] = {};
-        char curText[len+1] = {};
+        char curTag[TAG_LEN + 1] = {};
+        char curText[len + 1] = {};
 
         memcpy(curTag, textArr[i], TAG_LEN);
         memcpy(curText, &(textArr[i])[TAG_LEN], len);
@@ -814,6 +815,12 @@ int main(void) {
 
     UnloadResources();
     RL_CloseWindow();
+
+    char buffer[MAX_NAME_LENGTH] = {};
+    for (size_t i = 0; i < TOTAL_ENTRIES; i++) {
+        buffer[i] = (checkboxes[i] ? '1' : '0');
+    }
+    WriteToDataFile(DATA_FILE_PATH, buffer);
 
     return 0;
 }
