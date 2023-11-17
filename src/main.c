@@ -27,6 +27,7 @@
 #define LOGO_HEIGHT LOGO_WIDTH
 #define LOGO_BAN_OFFSET 50.0f
 
+#define DEFAULT_TEXT_SPACING 2.0f
 #define SCROLLABLE_WIDTH (WIDTH * .60f)
 #define SCROLLABLE_HEIGHT (HEIGHT * .80f)
 #define SCROLLABLE_LINE_HEIGHT (SCROLLABLE_HEIGHT * .10f)
@@ -36,20 +37,20 @@
 #define CHECKBOX_DIMENSIONS 20.0f
 #define CHECKBOX_RESERVED_SPACE SCROLLABLE_LINE_HEIGHT
 
+#define PURGE_BUTTON_WIDTH 100
+#define PURGE_BUTTON_HEIGHT 50
+#define PURGE_BUTTON_MARGIN 30
+#define PURGE_BUTTON_ROUNDNESS .2f
+#define PURGE_BUTTON_THICKNESS .2f
+#define PURGE_BUTTON_FONTSIZE 20
+#define PURGE_BUTTON_TEXT "PURGE"
+
 #define RES_PATH "./res/"
 #define TEXTURE_PATH RES_PATH "img/"
 #define FONT_PATH RES_PATH "fonts/"
 
 #define ASP_FREE(ptr) free(ptr)
-#define ASP_MALLOC(size, type) malloc((size) * sizeof(type))
-#define ASP_CSTR_JOIN(a, b, buffer)                           \
-    do {                                                      \
-        size_t len_a = strlen(a);                             \
-        size_t len_b = strlen(b);                             \
-        memcpy((void *)(buffer), (void *)(a), len_a);         \
-        memcpy((void *)&(buffer)[len_a], (void *)(b), len_b); \
-        buffer[len_a + len_b] = '\0';                         \
-    } while (0);
+#define ASP_MALLOC(size, logLevel) malloc((size) * sizeof(logLevel))
 // Needs prior defintion of `result` variable.
 // It is a simple implementation of a defer statement that to be used also needs a `defer` label at the end of the
 // function implementation that does what you need and specifically `returns result`
@@ -59,22 +60,73 @@
         goto defer;         \
     } while (0)
 
+typedef enum {
+    ASP_LOG_DEBUG,
+    ASP_LOG_INFO,
+    ASP_LOG_WARN,
+    ASP_LOG_ERROR,
+} LOGLEVEL;
+
 #define LOG_TEMPLATE   \
     __TIME__           \
     " - [%s] "__FILE__ \
     ":" TO_STRING(__LINE__) ": "
-#define ASP_ERROR(text, ...)                               \
-    do {                                                   \
-        char buffer[MAX_BUFFER_SIZE] = {0};                \
-        snprintf(buffer, MAX_PATH, LOG_TEMPLATE, "ERROR"); \
-                                                           \
-        char format[MAX_BUFFER_SIZE] = {0};                \
-        snprintf(format, MAX_PATH, text, __VA_ARGS__);     \
-                                                           \
-        char out[MAX_BUFFER_SIZE] = {0};                   \
-        ASP_CSTR_JOIN(buffer, format, out);                \
-        fprintf(stderr, out, __VA_ARGS__);                 \
-        exit(EXIT_FAILURE);                                \
+#define _ASP_LOG(logLevel, text, ...)                                \
+    do {                                                             \
+        char preamble[MAX_BUFFER_SIZE] = {0};                        \
+        const char *typeStr;                                         \
+        switch (logLevel) {                                          \
+            case ASP_LOG_DEBUG:                                      \
+                typeStr = "DEBUG";                                   \
+                break;                                               \
+            case ASP_LOG_INFO:                                       \
+                typeStr = "INFO";                                    \
+                break;                                               \
+            case ASP_LOG_WARN:                                       \
+                typeStr = "WARN";                                    \
+                break;                                               \
+            case ASP_LOG_ERROR:                                      \
+                typeStr = "ERROR";                                   \
+                break;                                               \
+        }                                                            \
+        snprintf(preamble, MAX_BUFFER_SIZE, LOG_TEMPLATE, typeStr);  \
+                                                                     \
+        char cleanedText[MAX_BUFFER_SIZE] = {0};                     \
+        const char *tmp = text;                                      \
+        size_t idx = 0;                                              \
+        while (*tmp != '\0') {                                        \
+            if (*tmp == '%') cleanedText[idx++] = '%';               \
+            cleanedText[idx++] = *tmp++;                             \
+        }                                                            \
+        char format[MAX_BUFFER_SIZE] = {0};                          \
+        snprintf(format, MAX_BUFFER_SIZE, cleanedText, __VA_ARGS__); \
+                                                                     \
+        char out[MAX_BUFFER_SIZE] = {0};                             \
+        ASP_CSTR_JOIN(preamble, format, out);                        \
+        out[strlen(out)] = '\n';                                     \
+        if (logLevel < ASP_LOG_ERROR) {                              \
+            printf(out, __VA_ARGS__);                                \
+        } else {                                                     \
+            fprintf(stderr, out, __VA_ARGS__);                       \
+        }                                                            \
+        if (logLevel == ASP_LOG_ERROR) exit(EXIT_FAILURE);           \
+    } while (0)
+
+#define ASP_DEBUG(text, ...)                        \
+    do {                                            \
+        _ASP_LOG(ASP_LOG_DEBUG, text, __VA_ARGS__); \
+    } while (0)
+#define ASP_INFO(text, ...)                        \
+    do {                                           \
+        _ASP_LOG(ASP_LOG_INFO, text, __VA_ARGS__); \
+    } while (0)
+#define ASP_WARN(text, ...)                        \
+    do {                                           \
+        _ASP_LOG(ASP_LOG_WARN, text, __VA_ARGS__); \
+    } while (0)
+#define ASP_ERROR(text, ...)                        \
+    do {                                            \
+        _ASP_LOG(ASP_LOG_ERROR, text, __VA_ARGS__); \
     } while (0)
 
 #define TODO() assert(0 && "Not yet implemented")
@@ -84,9 +136,14 @@
 #define V2Add(v, vv) \
     (Vector2) { v.x + vv.x, v.y + vv.y }
 
-#define HEADLINE "HEAD#"
-#define TEXTLINE "TEXT#"
-#define TAG_LEN 5
+#define ASP_CSTR_JOIN(a, b, buffer)                           \
+    do {                                                      \
+        size_t len_a = strlen(a);                             \
+        size_t len_b = strlen(b);                             \
+        memcpy((void *)(buffer), (void *)(a), len_a);         \
+        memcpy((void *)&(buffer)[len_a], (void *)(b), len_b); \
+        buffer[len_a + len_b] = '\0';                         \
+    } while (0);
 
 typedef struct Cstr_Arr {
     char **data;
@@ -169,6 +226,10 @@ typedef struct Cstr_Arr {
     (Color) { 229, 0, 232, 255 }
 #define BG_COLOR \
     (Color) { 33, 33, 33, 255 }
+#define DEFAULT_TEXT_COLOR \
+    (Color) { 245, 245, 245, 255 }
+#define PURGE_BUTTON_COLOR \
+    (Color) { 60, 60, 60, 255 }
 
 #define FONTS                        \
     FONT_PATH "RobotoSlab-Bold.ttf", \
@@ -228,6 +289,10 @@ long long WriteToDataFile(const char *, const char *);
 #define DATA_DIR_PATH "%APPDATA%/AndroidStudioPurge/"
 #define DATA_FILE_PATH DATA_DIR_PATH ".boxes"
 
+#define HEADLINE "HEAD#"
+#define TEXTLINE "TEXT#"
+#define TAG_LEN 5
+
 #define STUDIO_FILES_PATH                                \
     HEADLINE "Remove studio files:",                     \
         TEXTLINE "%USERPROFILE%/.android",               \
@@ -280,6 +345,15 @@ typedef enum {
     TOTAL_ENTRIES
 } RemovePathsIndex;
 
+#define CheckboxesToString(bufferPtr)                                 \
+    do {                                                              \
+        assert(buffer != NULL && "Pointer to buffer is NULL");        \
+        memset((bufferPtr), 0, (sizeof(buffer) / sizeof(buffer[0]))); \
+        for (size_t i = 0; i < TOTAL_ENTRIES; i++) {                  \
+            (bufferPtr)[i] = (checkboxes[i] ? '1' : '0');             \
+        }                                                             \
+    } while (0)
+
 bool checkboxes[TOTAL_ENTRIES] = {
     0,  // STUDIO_PATHS_HEADLINE
     1,  // DOT_ANDROID
@@ -331,7 +405,7 @@ defer:
     return;
 }
 
-void ParsePath(const char *path, void *dest) {
+void ParsePath(const char *path, void * const dest) {
     Cstr_Arr stringBuilder = {0};
     Cstr_Arr_FillFromSplit(&stringBuilder, path, '/', 2);
 
@@ -380,9 +454,7 @@ void CreateDataFile(const char *file) {
     if (hnd == INVALID_HANDLE_VALUE) ASP_ERROR("Invalid handle created for data file at: %s", parsedFile);
 
     char buffer[TOTAL_ENTRIES + 1] = {0};
-    for (size_t i = 0; i < TOTAL_ENTRIES; i++) {
-        buffer[i] = (checkboxes[i] ? '1' : '0');
-    }
+    CheckboxesToString(buffer);
 
     WriteToDataFile(file, buffer);
 }
@@ -400,24 +472,16 @@ void RemoveDirQuiet(LPCTSTR dir) {
     SHFileOperation(&file_op);
 }
 
-int startRemoval() {
-    // log_trace("Starting Windows removal");
+void StartRemoval() {
+    static const char *const removePaths[] = {
+        REMOVE_PATHS};
 
-    // // * Running default uninstaller
-    // log_info("Starting default uninstaller...");
-
-    // // TODO: Search for installation path and run default uninstaller
-
-    // // * Manual removal of Studio files
-    // log_info("Manually deleting Studio files...");
-
-    // // * Removal of Android SDK
-    // log_info("Deleting Android SDK...");
-
-    // // * Removal of projects created with Studio (User-created)
-    // log_info("Deleting user's project folder...");
-
-    return EXIT_SUCCESS;
+    for (size_t i = 0; i < TOTAL_ENTRIES; i++) {
+        if (!checkboxes[i]) continue;
+        char curPath[MAX_PATH] = {0};
+        ParsePath(&(removePaths[i])[TAG_LEN], curPath);
+        ASP_INFO("Deleting path \"%s\"...", curPath);
+    }
 }
 #endif  // _WIN32
 
@@ -456,7 +520,7 @@ int startRemoval() {
 #include <dirent.h>
 #include <sys/types.h>
 
-int startRemoval() {
+void StartRemoval() {
     // Attempt to delete with snap
 
     // https://stackoverflow.com/questions/5237482/how-do-i-execute-an-external-program-within-c-code-in-linux-with-arguments
@@ -477,8 +541,7 @@ int startRemoval() {
     } else {
         /* opendir() failed for some other reason. */
     }
-    assert(false && "Not implemented");
-    return EXIT_FAILURE;
+    TODO();
 }
 #endif  // __linux__
 
@@ -510,9 +573,8 @@ rm -Rf ~/Library/Caches/Google/AndroidStudio*
 rm -Rf ~/.AndroidStudio*
 */
 
-int startRemoval() {
-    assert(false && "Not implemented");
-    return EXIT_FAILURE;
+void StartRemoval() {
+    TODO();
 }
 #endif  // __APPLE__
 
@@ -618,7 +680,13 @@ void WriteAppTitle() {
 
     for (size_t i = 0; i < totalLines; i++) {
         offsets[i] = (longest - offsets[i]) / 2;
-        RL_DrawTextEx(fonts[ROBOTO_SLAB_BOLD], lines[i], (Vector2){marginLeft + offsets[i], marginTop + lineHeight * i}, MAX_FONT_SIZE, spacing, RAYWHITE);
+        RL_DrawTextEx(
+            fonts[ROBOTO_SLAB_BOLD],
+            lines[i],
+            (Vector2){marginLeft + offsets[i], marginTop + lineHeight * i},
+            MAX_FONT_SIZE,
+            spacing,
+            DEFAULT_TEXT_COLOR);
     }
 }
 
@@ -665,7 +733,6 @@ void DrawAppLogo() {
 
 void DrawScrollableOpts() {
     // const float lines = floorf(SCROLLABLE_HEIGHT / SCROLLABLE_LINE_HEIGHT);
-    const int spacing = 2;
     static const char *const textArr[] = {
         REMOVE_PATHS};
 
@@ -703,7 +770,7 @@ void DrawScrollableOpts() {
         DrawRectangleLines(V2Unpack(debugRowAnchor), SCROLLABLE_WIDTH, SCROLLABLE_LINE_HEIGHT, DEBUG_COLOR);
 #endif
 
-        const float textHeight = MeasureTextEx(curFont, curText, curFontSize, spacing).y;
+        const float textHeight = MeasureTextEx(curFont, curText, curFontSize, DEFAULT_TEXT_SPACING).y;
         Vector2 textAnchor = rowAnchor;
         textAnchor.y += (SCROLLABLE_LINE_HEIGHT - textHeight) / 2;
 
@@ -711,7 +778,7 @@ void DrawScrollableOpts() {
             fonts[ROBOTO_SLAB_REGULAR],
             curText,
             textAnchor,
-            curFontSize, spacing, RAYWHITE);
+            curFontSize, DEFAULT_TEXT_SPACING, DEFAULT_TEXT_COLOR);
 
         if (isText) {
             Vector2 boxAnchor = getRectAnchor(CHECKBOX_RESERVED_SPACE, CHECKBOX_RESERVED_SPACE, CHECKBOX_DIMENSIONS, CHECKBOX_DIMENSIONS, (Vector2){0, 0});
@@ -735,8 +802,8 @@ void DrawScrollableOpts() {
         } else {
             DrawLineEx(
                 (Vector2){textAnchor.x, textAnchor.y + textHeight},
-                (Vector2){textAnchor.x + MeasureTextEx(curFont, curText, curFontSize, spacing).x, textAnchor.y + textHeight},
-                2, RAYWHITE);
+                (Vector2){textAnchor.x + MeasureTextEx(curFont, curText, curFontSize, DEFAULT_TEXT_SPACING).x, textAnchor.y + textHeight},
+                2, DEFAULT_TEXT_COLOR);
         }
     }
 
@@ -745,7 +812,37 @@ void DrawScrollableOpts() {
     DrawRectangle(scrollableAnchor.x, scrollableAnchor.y + SCROLLABLE_HEIGHT, SCROLLABLE_WIDTH, scrollableAnchor.y, BG_COLOR);
 }
 
+void DrawPurgeButton() {
+    RL_Rectangle rectContainer = {
+        WIDTH - PURGE_BUTTON_MARGIN - PURGE_BUTTON_WIDTH,
+        HEIGHT - PURGE_BUTTON_MARGIN - PURGE_BUTTON_HEIGHT,
+        PURGE_BUTTON_WIDTH,
+        PURGE_BUTTON_HEIGHT};
+
+    DrawRectangleRounded(rectContainer, PURGE_BUTTON_ROUNDNESS, 0, PURGE_BUTTON_COLOR);
+#ifdef DEBUG
+    DrawRectangleLines(RectUnpack(rectContainer), DEBUG_COLOR);
+#endif
+
+    Font font = fonts[ROBOTO_SLAB_REGULAR];
+
+    Vector2 textAnchor = getRectAnchor(
+        rectContainer.width,
+        rectContainer.height,
+        V2Unpack(MeasureTextEx(font, PURGE_BUTTON_TEXT, PURGE_BUTTON_FONTSIZE, DEFAULT_TEXT_SPACING)),
+        (Vector2){rectContainer.x, rectContainer.y});
+
+    RL_DrawTextEx(font, PURGE_BUTTON_TEXT, textAnchor, PURGE_BUTTON_FONTSIZE, DEFAULT_TEXT_SPACING, DEFAULT_TEXT_COLOR);
+}
+
 #define ScrollableRectContained(x, y) CheckContained((Vector2){x, y}, (RL_Rectangle){scrollableAnchor.x, scrollableAnchor.y, SCROLLABLE_WIDTH, SCROLLABLE_HEIGHT})
+
+#define ButtonPurgeContained(x, y)                                                          \
+    CheckContained((Vector2){x, y}, (RL_Rectangle){                                         \
+                                        WIDTH - PURGE_BUTTON_MARGIN - PURGE_BUTTON_WIDTH,   \
+                                        HEIGHT - PURGE_BUTTON_MARGIN - PURGE_BUTTON_HEIGHT, \
+                                        PURGE_BUTTON_WIDTH,                                 \
+                                        PURGE_BUTTON_HEIGHT})
 
 bool CheckContained(Vector2 point, RL_Rectangle space) {
     return (point.x >= space.x && point.x <= space.x + space.width) &&
@@ -762,7 +859,9 @@ bool isRowHeader(size_t idx) {
 }
 
 void HandleClick(float x, float y) {
-    if (ScrollableRectContained(x, y)) {
+    if (ButtonPurgeContained(x, y)) {
+        StartRemoval();
+    } else if (ScrollableRectContained(x, y)) {
         size_t clickedRow = getClickedRow(x, y);
         if (isRowHeader(clickedRow)) return;
         checkboxes[clickedRow] ^= 1;
@@ -801,6 +900,7 @@ int main(void) {
         WriteAppTitle();
         DrawAppLogo();
         DrawScrollableOpts();
+        DrawPurgeButton();
 
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
             HandleClick(V2Unpack(GetMousePosition()));
@@ -818,9 +918,7 @@ int main(void) {
     RL_CloseWindow();
 
     char buffer[MAX_NAME_LENGTH] = {0};
-    for (size_t i = 0; i < TOTAL_ENTRIES; i++) {
-        buffer[i] = (checkboxes[i] ? '1' : '0');
-    }
+    CheckboxesToString(buffer);
     WriteToDataFile(DATA_FILE_PATH, buffer);
 
     return 0;
