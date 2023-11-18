@@ -67,10 +67,21 @@ typedef enum {
     ASP_LOG_ERROR,
 } LOGLEVEL;
 
-#define LOG_TEMPLATE   \
+#ifndef ASP_LOG_VERBOSE
+#define ASP_LOG_VERBOSE 0
+#endif
+
+#if ASP_LOG_VERBOSE
+#define _LOG_TEMPLATE   \
     __TIME__           \
     " - [%s] "__FILE__ \
     ":" TO_STRING(__LINE__) ": "
+#else
+#define _LOG_TEMPLATE   \
+    __TIME__           \
+    " - [%s] "
+#endif
+
 #define _ASP_LOG(logLevel, text, ...)                                \
     do {                                                             \
         char preamble[MAX_BUFFER_SIZE] = {0};                        \
@@ -89,7 +100,7 @@ typedef enum {
                 typeStr = "ERROR";                                   \
                 break;                                               \
         }                                                            \
-        snprintf(preamble, MAX_BUFFER_SIZE, LOG_TEMPLATE, typeStr);  \
+        snprintf(preamble, MAX_BUFFER_SIZE, _LOG_TEMPLATE, typeStr);  \
                                                                      \
         char cleanedText[MAX_BUFFER_SIZE] = {0};                     \
         const char *tmp = text;                                      \
@@ -293,6 +304,8 @@ long long WriteToDataFile(const char *, const char *);
 #define TEXTLINE "TEXT#"
 #define TAG_LEN 5
 
+#define RemoveTagFromPath(path) &(path)[TAG_LEN]
+
 #define STUDIO_FILES_PATH                                \
     HEADLINE "Remove studio files:",                     \
         TEXTLINE "%USERPROFILE%/.android",               \
@@ -379,7 +392,7 @@ void TranslateEnvVariable(Cstr_Arr *arrPtr, size_t idx) {
     if (strlen(variable) < 2 || *variable != '%' || variable[strlen(variable) - 1] != '%') return;
 
     char name[MAX_NAME_LENGTH] = {0};
-    memcpy(name, &variable[1], strlen(variable) - 2);
+    memcpy(name, &variable[1], strlen(variable) - 2); // Discard % signs
 
     char const *envVar = name;
 
@@ -405,17 +418,16 @@ defer:
     return;
 }
 
-void ParsePath(const char *path, void * const dest) {
+void ParsePath(const char * const path, void * const dest) {
     Cstr_Arr stringBuilder = {0};
     Cstr_Arr_FillFromSplit(&stringBuilder, path, '/', 2);
 
-    // TODO: the second time this thing won't work
     Cstr_Arr_ForEach(&stringBuilder, TranslateEnvVariable);
 
     char out[MAX_PATH] = {0};
     Cstr_Arr_Join(&stringBuilder, "\\", out);
 
-    memcpy(dest, (void *)out, strlen(out) + 1);
+    memcpy(dest, out, strlen(out) + 1);
 }
 
 void CreateDataDir(const char *path) {
@@ -431,7 +443,7 @@ void CreateDataDir(const char *path) {
                 ASP_ERROR("Path %s not found", path);
                 break;
             default:
-                ASP_ERROR("Folder creation you don't know about", NULL);
+                ASP_ERROR("Folder creation failed, error unknown", NULL);
                 break;
         }
         SetErrorMode(NO_ERROR);
@@ -479,7 +491,7 @@ void StartRemoval() {
     for (size_t i = 0; i < TOTAL_ENTRIES; i++) {
         if (!checkboxes[i]) continue;
         char curPath[MAX_PATH] = {0};
-        ParsePath(&(removePaths[i])[TAG_LEN], curPath);
+        ParsePath(RemoveTagFromPath(removePaths[i]), curPath);
         ASP_INFO("Deleting path \"%s\"...", curPath);
     }
 }
